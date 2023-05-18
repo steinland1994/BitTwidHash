@@ -5,7 +5,7 @@
 
 /// Returned by the function finish2(). It holds two u64 hashes, one of them being guarded against being 0 when cast to an u8.
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct Finish2 {
     pub hash: u64,
     pub as_u8_nonzero: u64,

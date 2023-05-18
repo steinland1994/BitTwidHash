@@ -22,6 +22,7 @@ pub trait HasherExt {
 impl<T: std::hash::Hasher> HasherExt for T {
     fn finish2(&self) -> Finish2 {
         let mut tmp = self.finish();
+        tmp = whymum(tmp, 0xda942042e4dd58b5, 0);
         if (tmp as u8) == 0 {
             tmp += 1;
         }

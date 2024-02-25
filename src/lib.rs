@@ -3,43 +3,43 @@
 //! It should also be somewhat safe, producing well distributed hashes and being guarded against a sticky 0 state and zeroing of the internal state except for sheer bad luck.
 //! The 0xda942042e4dd58b5 constant is shamelessly copied from Daniel Lemire's blog. What's good enough for him is good enough for me, right?
 
-/// Returned by the function finish2(). It holds two u64 hashes, one of them being guarded against being 0 when cast to an u8.
-#[allow(dead_code)]
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Finish2 {
-    pub hash: u64,
-    pub as_u8_nonzero: u64,
-}
+// / Returned by the function finish2(). It holds two u64 hashes, one of them being guarded against being 0 when cast to an u8.
+// #[allow(dead_code)]
+// #[derive(Debug, Default, Clone, Copy)]
+// pub struct Finish2 {
+//     pub hash: u64,
+//     pub as_u8_nonzero: u64,
+// }
 
-/// Extension Trait for Hashers, which allows for returning an additional - possibly different - hash,
-/// which is guaranteed to be non-zero when cast to an u8
-pub trait HasherExt {
-    /// Returns a struct of two different hashes, as_u8_nonzero being guarded against being 0 when cast to an u8.
-    /// This allows for a datastructure of u8's to efficiently encode e.g. an "empty" state.
-    fn finish2(&self) -> Finish2;
-}
+// /// Extension Trait for Hashers, which allows for returning an additional - possibly different - hash,
+// /// which is guaranteed to be non-zero when cast to an u8
+// pub trait HasherExt {
+//     /// Returns a struct of two different hashes, as_u8_nonzero being guarded against being 0 when cast to an u8.
+//     /// This allows for a datastructure of u8's to efficiently encode e.g. an "empty" state.
+//     fn finish2(&self) -> Finish2;
+// }
 
-impl<T: std::hash::Hasher> HasherExt for T {
-    fn finish2(&self) -> Finish2 {
-        let mut tmp = self.finish();
-        tmp = whymum(tmp, 0xda942042e4dd58b5, 0);
-        if (tmp as u8) == 0 {
-            tmp += 1;
-        }
-        Finish2 {
-            hash: self.finish(),
-            as_u8_nonzero: tmp,
-        }
-    }
-}
+// impl<T: std::hash::Hasher> HasherExt for T {
+//     fn finish2(&self) -> Finish2 {
+//         let mut tmp = self.finish();
+//         tmp = whymum(tmp, 0xda942042e4dd58b5, 0);
+//         if (tmp as u8) == 0 {
+//             tmp += 1;
+//         }
+//         Finish2 {
+//             hash: self.finish(),
+//             as_u8_nonzero: tmp,
+//         }
+//     }
+// }
 
 /// WhyHash has two independent states and two secrets, one derived from the other.
 /// This allows for the creation of two hashes by consuming the input data only once.
 pub struct WhyHash {
     state: u64,
-    state2: u64,
+    // state2: u64,
     secret: u64,
-    secret2: u64,
+    // secret2: u64,
 }
 
 impl WhyHash {
@@ -51,18 +51,18 @@ impl WhyHash {
         let secret = poprand();
         WhyHash {
             state: 0xda942042e4dd58b5,
-            state2: 0xda942042e4dd58b5,
+            // state2: 0xda942042e4dd58b5,
             secret,
-            secret2: whymum(0xda942042e4dd58b5, secret, 0),
+            // secret2: whymum(0xda942042e4dd58b5, secret, 0),
         }
     }
 
-    pub fn finish2(&self) -> Finish2 {
-        Finish2 {
-            hash: self.state,
-            as_u8_nonzero: self.state2,
-        }
-    }
+    // pub fn finish2(&self) -> Finish2 {
+    //     Finish2 {
+    //         hash: self.state,
+    //         as_u8_nonzero: self.state2,
+    //     }
+    // }
 }
 
 impl Default for WhyHash {
@@ -80,9 +80,9 @@ impl std::hash::BuildHasher for WhyHash {
     fn build_hasher(&self) -> WhyHash {
         WhyHash {
             state: 0xda942042e4dd58b5,
-            state2: 0xda942042e4dd58b5,
+            // state2: 0xda942042e4dd58b5,
             secret: self.secret,
-            secret2: self.secret2,
+            // secret2: self.secret2,
         }
     }
 }
@@ -101,11 +101,11 @@ impl std::hash::Hasher for WhyHash {
                 self.state,
                 self.secret,
             );
-            self.state2 = whymum(
-                u64::from_le_bytes(octets.try_into().expect("chunks_exact failed")),
-                self.state2,
-                self.secret2,
-            );
+            // self.state2 = whymum(
+            //     u64::from_le_bytes(octets.try_into().expect("chunks_exact failed")),
+            //     self.state2,
+            //     self.secret2,
+            // );
         }
 
         // Consume any possibly remaining bytes left by ORing them onto an zeroed u64 and rotating it.
@@ -117,12 +117,12 @@ impl std::hash::Hasher for WhyHash {
 
         // Feed the remaining bytes into the MUM prng
         self.state = whymum(tmp, self.state, self.secret);
-        self.state2 = whymum(tmp, self.state2, self.secret2);
+        // self.state2 = whymum(tmp, self.state2, self.secret2);
 
         // Guard state2 against being 0 when cast to an u8
-        if (self.state2 as u8) == 0 {
-            self.state2 += 1;
-        }
+        // if (self.state2 as u8) == 0 {
+        //     self.state2 += 1;
+        // }
     }
 
     #[inline(always)]
@@ -143,7 +143,7 @@ fn whymum(cleardat: u64, state: u64, secret: u64) -> u64 {
 
 // A simple source of randomness, guarded against a too unbalanced population counts.
 fn poprand() -> u64 {
-    use std::collections::hash_map::RandomState;
+    use std::hash::RandomState;
     use std::hash::{BuildHasher, Hasher};
     let mut num: u64 = RandomState::new().build_hasher().finish();
     loop {

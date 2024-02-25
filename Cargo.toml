@@ -5,3 +5,11 @@ edition = "2021"
 
 [profile.test]
 opt-level = 3
+
+[dev-dependencies]
+criterion = "0.5.1"
+fnv = "1.0.7"
+
+[[bench]]
+name = "benches"
+harness = false

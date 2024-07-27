@@ -1,5 +1,6 @@
-# WhyHash
-WhyHash is a very simple and easy to understand hash function questionably derived from wyHash and MUM.
-It should be fast, relying only on a few simple operations.
-It should also be somewhat safe, producing well distributed hashes and being guarded against a sticky 0 state and zeroing of the internal state except for sheer bad luck.
-The 0xda942042e4dd58b5 constant is shamelessly copied from Daniel Lemire's blog. What's good enough for him is good enough for me, right?
+# BitTwidHash
+BitTwidHash is a fast hashfunction built on ZwoHash's write function, gathers the data by adding and rotating and then finishes with a round of xoshiro128++.
+
+ZwoHash's write function may collide on certain inputs (eg. 1111 and 111111), which is why another, slower write variant is also present in the code.
+
+THIS HASH FUNCTION IS WRITTEN FOR LEARNING PURPOSES. PLEASE DO NOT RELY UPON IT (YET).

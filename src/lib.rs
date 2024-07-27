@@ -1,156 +1,177 @@
-//! WhyHash is a very simple and easy to understand hash function questionably derived from wyHash and MUM.
-//! It should be fast, relying only on a few simple operations.
-//! It should also be somewhat safe, producing well distributed hashes and being guarded against a sticky 0 state and zeroing of the internal state except for sheer bad luck.
-//! The 0xda942042e4dd58b5 constant is shamelessly copied from Daniel Lemire's blog. What's good enough for him is good enough for me, right?
+#![no_std]
 
-// / Returned by the function finish2(). It holds two u64 hashes, one of them being guarded against being 0 when cast to an u8.
-// #[allow(dead_code)]
-// #[derive(Debug, Default, Clone, Copy)]
-// pub struct Finish2 {
-//     pub hash: u64,
-//     pub as_u8_nonzero: u64,
-// }
+use core::ops::BitXor;
 
-// /// Extension Trait for Hashers, which allows for returning an additional - possibly different - hash,
-// /// which is guaranteed to be non-zero when cast to an u8
-// pub trait HasherExt {
-//     /// Returns a struct of two different hashes, as_u8_nonzero being guarded against being 0 when cast to an u8.
-//     /// This allows for a datastructure of u8's to efficiently encode e.g. an "empty" state.
-//     fn finish2(&self) -> Finish2;
-// }
-
-// impl<T: std::hash::Hasher> HasherExt for T {
-//     fn finish2(&self) -> Finish2 {
-//         let mut tmp = self.finish();
-//         tmp = whymum(tmp, 0xda942042e4dd58b5, 0);
-//         if (tmp as u8) == 0 {
-//             tmp += 1;
-//         }
-//         Finish2 {
-//             hash: self.finish(),
-//             as_u8_nonzero: tmp,
-//         }
-//     }
-// }
-
-/// WhyHash has two independent states and two secrets, one derived from the other.
-/// This allows for the creation of two hashes by consuming the input data only once.
-pub struct WhyHash {
-    state: u64,
-    // state2: u64,
-    secret: u64,
-    // secret2: u64,
+pub struct BitTwidHash {
+    init: [u64; 2],
+    state: [u64; 2],
 }
 
-impl WhyHash {
-    /// Creates a new instance of WhyHash, which can be used both as Hasher or as BuildHasher.
-    /// std::collections::hash_map::Randomstate is the source of randomness.
-    /// The generated secret has a somewhat balanced amount of ones and zeroes.
-
-    pub fn new() -> WhyHash {
-        let secret = poprand();
-        WhyHash {
-            state: 0xda942042e4dd58b5,
-            // state2: 0xda942042e4dd58b5,
-            secret,
-            // secret2: whymum(0xda942042e4dd58b5, secret, 0),
-        }
+impl core::hash::Hasher for BitTwidHash {
+    #[inline(always)]
+    fn finish(&self) -> u64 {
+        let mut s0 = self.state[0];
+        let mut s1 = self.state[1];
+        s1 ^= s0;
+        s0 = s0.rotate_left(24).bitxor(s1).bitxor(s1 << 16);
+        s1 = s1.rotate_left(37);
+        s0.wrapping_add(s1).rotate_left(17).wrapping_add(s0)
     }
 
-    // pub fn finish2(&self) -> Finish2 {
-    //     Finish2 {
-    //         hash: self.state,
-    //         as_u8_nonzero: self.state2,
-    //     }
-    // }
+    #[inline(always)]
+    fn write(&mut self, bytes: &[u8]) {
+        self._write_v2(bytes);
+    }
 }
-
-impl Default for WhyHash {
+#[cfg(feature = "std")]
+impl Default for BitTwidHash {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl std::hash::BuildHasher for WhyHash {
-    type Hasher = WhyHash;
+impl core::hash::BuildHasher for BitTwidHash {
+    type Hasher = BitTwidHash;
 
-    /// WhyHash is its own BuildHasher. Therefore any instance of WhyHash can return an instance of itself
-    /// which is able to produce the same hashes for the same input as the original.
-    #[inline(always)]
-    fn build_hasher(&self) -> WhyHash {
-        WhyHash {
-            state: 0xda942042e4dd58b5,
-            // state2: 0xda942042e4dd58b5,
-            secret: self.secret,
-            // secret2: self.secret2,
+    #[inline]
+    fn build_hasher(&self) -> BitTwidHash {
+        BitTwidHash {
+            init: self.init,
+            state: self.init,
         }
     }
 }
 
-impl std::hash::Hasher for WhyHash {
+impl BitTwidHash {
+    #[cfg(not(feature = "std"))]
+    #[inline]
+    pub unsafe fn new() -> BitTwidHash {
+        let init: [u64; 2] = [0xdf900294d8f554a5, 0x170865df4b3201fc];
+
+        BitTwidHash { init, state: init }
+    }
+
+    #[cfg(feature = "std")]
+    #[inline]
+    pub fn new() -> BitTwidHash {
+        extern crate std;
+        use core::hash::{BuildHasher, Hasher};
+        BitTwidHash::new_with_secret(std::hash::RandomState::new().build_hasher().finish())
+    }
+
+    #[inline]
+    pub fn new_with_iv(init: [u64; 2]) -> BitTwidHash {
+        BitTwidHash { init, state: init }
+    }
+
+    #[inline]
+    pub fn new_with_secret(secret: u64) -> BitTwidHash {
+        let mut init: [u64; 2] = [0; 2];
+        let mut s: [u64; 4] = [
+            0x180ec6d33cfd0aba,
+            0xd5a61266f0c9392c,
+            0xa9582618e03fc9aa,
+            0x39abdc4529b1661c,
+        ];
+        s[0] ^= secret;
+        for e in init.iter_mut() {
+            for _i in 0..20 {
+                rnd_xsr256(&mut s);
+            }
+
+            for _i in 0..1000 {
+                rnd_xsr256(&mut s);
+                *e = s[0].wrapping_add(s[3]).rotate_left(23).wrapping_add(s[0]);
+                let co = e.count_ones();
+                if co <= 40 && co >= 24 {
+                    break;
+                }
+            }
+        }
+        BitTwidHash { init, state: init }
+    }
+
+    // Very simple write variant, that reads the largest possible primitive type remaining from the rest of the bytes slice
     #[inline(always)]
-    fn write(&mut self, bytes: &[u8]) {
-        // Consume the input data in chunks of 8 Bytes. The remaining bytes are consumed later.
-        // The chunks of 8 bytes are fed into a MUM random number generator, guarded against a
-        // sticky 0 state and zeroing with known bad data. Not great, but good enough for me.
-        // This should prevent any HashDOS.(?) State and State2 are treated identical except for their secret.
-        let mut byteiter = bytes.chunks_exact(8);
-        for octets in &mut byteiter {
-            self.state = whymum(
-                u64::from_le_bytes(octets.try_into().expect("chunks_exact failed")),
-                self.state,
-                self.secret,
-            );
-            // self.state2 = whymum(
-            //     u64::from_le_bytes(octets.try_into().expect("chunks_exact failed")),
-            //     self.state2,
-            //     self.secret2,
-            // );
+    fn _write_v1(&mut self, mut bytes: &[u8]) {
+        while bytes.len() >= 8 {
+            let tmp: [u8; 8] = bytes[..8].try_into().unwrap();
+            self.gather(u64::from_ne_bytes(tmp));
+            bytes = &bytes[8..];
         }
 
-        // Consume any possibly remaining bytes left by ORing them onto an zeroed u64 and rotating it.
-        let mut tmp: u64 = 0;
-        for byte in byteiter.remainder() {
-            tmp = tmp.rotate_left(8);
-            tmp |= u64::from(*byte);
+        if bytes.len() > 0 {
+            let mut tmp: u64 = 0;
+
+            if (bytes.len() & 4) > 0 {
+                let a = bytes[..4].try_into().unwrap();
+                tmp |= u32::from_ne_bytes(a) as u64;
+                bytes = &bytes[4..];
+            }
+            if (bytes.len() & 2) > 0 {
+                let a = bytes[..2].try_into().unwrap();
+                tmp |= (u16::from_ne_bytes(a) as u64) << 32;
+                bytes = &bytes[2..];
+            }
+            if (bytes.len() & 1) > 0 {
+                tmp |= (bytes[0] as u64) << 48;
+            }
+
+            self.gather(tmp);
         }
+    }
 
-        // Feed the remaining bytes into the MUM prng
-        self.state = whymum(tmp, self.state, self.secret);
-        // self.state2 = whymum(tmp, self.state2, self.secret2);
+    //ZwoHash's write variant is much faster, but can overlap bytes
+    #[inline(always)]
+    fn _write_v2(&mut self, bytes: &[u8]) {
+        if bytes.len() >= 8 {
+            let mut bytes_left = bytes;
 
-        // Guard state2 against being 0 when cast to an u8
-        // if (self.state2 as u8) == 0 {
-        //     self.state2 += 1;
-        // }
+            while bytes_left.len() > 8 {
+                let full_chunk: [u8; 8] = bytes_left[..8].try_into().unwrap();
+                self.gather(u64::from_ne_bytes(full_chunk));
+                bytes_left = &bytes_left[8..];
+            }
+
+            if bytes.len() >= 8 {
+                let last_chunk: [u8; 8] = bytes[bytes.len() - 8..].try_into().unwrap();
+                self.gather(u64::from_ne_bytes(last_chunk));
+            } else {
+                core::unreachable!();
+            }
+        } else if bytes.len() >= 4 {
+            let chunk_low: [u8; 4] = bytes[..4].try_into().unwrap();
+            let chunk_high: [u8; 4] = bytes[bytes.len() - 4..].try_into().unwrap();
+            let chunk_value = (u32::from_ne_bytes(chunk_low) as u64)
+                | ((u32::from_ne_bytes(chunk_high) as u64) << 32);
+            self.gather(chunk_value);
+        } else if bytes.len() >= 2 {
+            let chunk_low: [u8; 2] = bytes[..2].try_into().unwrap();
+            let chunk_high: [u8; 2] = bytes[bytes.len() - 2..].try_into().unwrap();
+            let chunk_value = (u16::from_ne_bytes(chunk_low) as u64)
+                | ((u16::from_ne_bytes(chunk_high) as u64) << 16);
+            self.gather(chunk_value);
+        } else if bytes.len() >= 1 {
+            self.gather(bytes[0] as u64);
+        }
     }
 
     #[inline(always)]
-    fn finish(&self) -> u64 {
-        self.state
+    fn gather(&mut self, cleardat: u64) {
+        self.state[1] = self.state[0].wrapping_add(self.state[1]);
+        self.state[0] = self.state[0].wrapping_add(cleardat);
+        self.state[1] = self.state[1].rotate_left(19);
     }
 }
 
-// The MUM random number generator has quite amazing collision properties.
-// XORing the secret onto the state and input data guards it against sticky zeroes and zeroing of its state,
-// but makes collisions slightly worse in my simple tests. Nevertheless on a simplicity,
-// performance and safety Venn diagram the dot representing it looks like a circle.
-#[inline(always)]
-fn whymum(cleardat: u64, state: u64, secret: u64) -> u64 {
-    let tmp: u128 = u128::from(state ^ secret) * u128::from(cleardat ^ secret);
-    ((tmp >> 64) ^ tmp) as u64
-}
+fn rnd_xsr256(s: &mut [u64; 4]) {
+    let t = s[1] << 17;
 
-// A simple source of randomness, guarded against a too unbalanced population counts.
-fn poprand() -> u64 {
-    use std::hash::RandomState;
-    use std::hash::{BuildHasher, Hasher};
-    let mut num: u64 = RandomState::new().build_hasher().finish();
-    loop {
-        if num.count_ones() >= 24 && num.count_ones() <= 40 {
-            return num;
-        } else {
-            num = RandomState::new().build_hasher().finish();
-        }
-    }
+    s[2] ^= s[0];
+    s[3] ^= s[1];
+    s[1] ^= s[2];
+    s[0] ^= s[3];
+
+    s[2] ^= t;
+    s[3] = s[3].rotate_left(45);
 }

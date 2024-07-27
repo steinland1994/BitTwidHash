@@ -1,14 +1,20 @@
 [package]
-name = "whyhash"
+name = "bittwidhash"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [profile.test]
 opt-level = 3
 
 [dev-dependencies]
+ahash = "0.8.11"
 criterion = "0.5.1"
 fnv = "1.0.7"
+fxhash = "0.2.1"
+wyhash = "0.5.0"
+wyhash-final4 = "0.1.3"
+zwohash = "0.1.2"
 
 [[bench]]
 name = "benches"

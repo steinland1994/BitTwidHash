@@ -2,6 +2,7 @@
 
 use core::ops::BitXor;
 
+#[derive(Clone, Debug)]
 pub struct BitTwidHash {
     init: [u64; 2],
     state: [u64; 2],
